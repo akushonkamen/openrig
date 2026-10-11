@@ -68,8 +68,21 @@ export interface OutboundQueuePort {
   listHumanAlerts(filter: AlertFilterOpts): Promise<QueueItem[]>;
 }
 
+/** #1013 — a workflow gate row's body is the agent packet: the heading, instance/step
+ *  lines, objective and the `Continuation:` command are written for the seat that
+ *  resumes the workflow after sign-off, and stay on the row byte-identical for it.
+ *  A person the same row is routed to reads the ask and the evidence only. */
+function humanGateBody(summary: string | null, evidenceRef: string | null): string | null {
+  const lines = [summary ? `Ask: ${summary}` : null, evidenceRef ? `Evidence: ${evidenceRef}` : null]
+    .filter((line): line is string => line !== null);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
 function project(q: RepoQueueItem, transition: QueueTransition, entities: readonly HumanFragment[]): QueueItem | null {
   const r = q as unknown as Record<string, unknown>;
+  const tags = (r.tags as string[] | null) ?? null;
+  const summary = (r.summary as string | null) ?? null;
+  const evidenceRef = (r.evidenceRef as string | null) ?? null;
   let destinationSession: string | null = null;
   let sourceSession: string | null = null;
   if (transition.ownerNotificationKind === "human-decision-resolved") {
@@ -87,16 +100,17 @@ function project(q: RepoQueueItem, transition: QueueTransition, entities: readon
     qitemId: String(r.qitemId),
     destinationSession,
     sourceSession,
-    tags: (r.tags as string[] | null) ?? null,
+    tags,
     state: (r.state as string | null) ?? null,
     tier: (r.tier as string | null) ?? null,
     humanIntent: q.humanIntent,
     humanDetail: q.humanDetail,
     replyTo: q.replyTo ?? null,
     humanQuestions: q.humanQuestions ?? null,
-    summary: (r.summary as string | null) ?? null,
-    body: (r.body as string | null) ?? null,
-    evidenceRef: (r.evidenceRef as string | null) ?? null,
+    summary,
+    // #1013 — the person gets the ask, never the seat's packet.
+    body: tags?.includes("gate") ? humanGateBody(summary, evidenceRef) : ((r.body as string | null) ?? null),
+    evidenceRef,
     notificationKey: `${q.qitemId}:${transition.transitionId}`,
     ownerNotificationKind: transition.ownerNotificationKind,
     ownerNotificationLevel: transition.ownerNotificationLevel,
