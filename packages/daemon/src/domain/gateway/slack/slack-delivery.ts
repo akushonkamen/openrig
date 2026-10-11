@@ -345,6 +345,10 @@ function deliverSinglePart(opts: SubsystemSlackDeliveryOpts, markEpisode = true)
         body: q.body,
         humanQuestions: q.humanQuestions,
         destinationSession: q.destinationSession ?? decision.entityBindingRef,
+        // #1013 — a gate parked on a human seat renders the question, not the agent packet.
+        state: q.state,
+        tags: q.tags,
+        evidenceRef: q.evidenceRef,
       },
       {
         sourceLabel: opts.sourceLabel,

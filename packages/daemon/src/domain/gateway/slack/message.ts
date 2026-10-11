@@ -18,6 +18,22 @@ export interface QitemLike {
   destinationSession?: string | null;
   /** #193 — structured questions, rendered as one button row per question. */
   humanQuestions?: readonly HumanQuestion[] | null;
+  /** #1013 — row state + tags, so a workflow gate PARKED on a human seat can be
+   *  re-rendered for the person instead of posting the seat's agent packet. */
+  state?: string | null;
+  tags?: readonly string[] | null;
+  /** #1013 — the structured evidenceRef: for a parked gate it rides the evidence link/media
+   *  path when it is an https ref, else it renders as one Evidence line (never the packet). */
+  evidenceRef?: string | null;
+}
+
+/** #1013 — a workflow gate row parked on a human seat (the projector parks it
+ * `state=blocked, blocked_on=<human seat>` and tags it `gate`). Its body is the agent
+ * packet — instance/step/Continuation lines for the seat that resumes after sign-off —
+ * while the person needs only the headline (`gate.summary`, plain language per C6) and
+ * the evidence link. The row itself is untouched; this gates the OUTBOUND render only. */
+export function isHumanGatePacket(q: Pick<QitemLike, "state" | "tags">): boolean {
+  return q.state === "blocked" && (q.tags ?? []).includes("gate");
 }
 
 /** M1 A5b — an outbound image attachment. A media-bearing OutboundDecision carries these;
@@ -272,7 +288,19 @@ function bounded(text: string, max: number, field: string): string {
  * the human sees one subject, complete body and one sender attribution. */
 export function buildOutboundMessage(q: QitemLike, opts: OutboundMessageOpts): SlackMessagePayload {
   const summary = inert(String(q.summary || "(no summary)"));
-  const body = bounded(inert(String(q.body || "")), SLACK_SECTION_CAP, "body");
+  // #1013 — a gate parked on a human renders from the structured fields: the headline IS
+  // the ask (gate.summary) and the evidenceRef rides the evidence link/media path. When
+  // that path won't carry it (a local path, not an https ref), the body falls to a single
+  // Evidence line — the raw agent packet (instance/step/Continuation lines for the seat
+  // that resumes after sign-off) never does. Without a plain-language summary there is
+  // nothing to show the person instead, so the packet stays as the fallback.
+  const humanGate = isHumanGatePacket(q) && String(q.summary ?? "").trim() !== "";
+  const gateEvidence = String(q.evidenceRef ?? "").trim();
+  const body = humanGate
+    ? (opts.evidenceLink || opts.mediaRefs?.length || !gateEvidence
+      ? ""
+      : bounded(`Evidence: ${inert(gateEvidence)}`, SLACK_SECTION_CAP, "body"))
+    : bounded(inert(String(q.body || "")), SLACK_SECTION_CAP, "body");
   const mention = opts.mentionUserId ? `<@${opts.mentionUserId}> :rotating_light: ` : "";
   const headline = bounded(`${mention}*${summary}*`, SLACK_SECTION_CAP, "subject");
   const attr = bounded(`from ${inert(opts.attribution?.session || opts.sourceLabel)}`, 2000, "sender");

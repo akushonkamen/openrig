@@ -158,3 +158,50 @@ describe("M1 A5b — outbound image attachments (the wired T1076 seam)", () => {
     expect(plain.text).not.toContain("image attachment");
   });
 });
+
+describe("#1013 — a workflow gate parked on a human seat renders the question, not the agent packet", () => {
+  // The packet exactly as workflowHandoffBody builds it (projector :1781-1825): agent-facing
+  // instance/step lines + Ask/Evidence + the continuation block for the resuming seat.
+  const gatePacket = [
+    "### Workflow gate: tianqi-mission@1 step plan_signoff",
+    "",
+    "Workflow instance: 01M4EXAMPLEINSTANCE",
+    "Prior step: plan (orchestrator) closed by orch@kernel",
+    "This step: plan_signoff (orchestrator)",
+    "Gate: human sign-off — the workflow is PARKED (waiting) until this item is resolved/closed; the flow then continues from this step.",
+    "Ask: Approve the plan at https://example.invalid/plan.md",
+    "Evidence: https://example.invalid/plan.md",
+    "Objective: reach plan sign-off",
+    "",
+    "Continuation: rig workflow project --instance 01M4EXAMPLEINSTANCE",
+    "Context: this workflow packet is a shortcut, not the whole story; open the instance for the full plan.",
+  ].join("\n");
+  const gateRow = {
+    qitemId: "q-gate",
+    summary: "Approve the plan at https://example.invalid/plan.md",
+    body: gatePacket,
+    state: "blocked",
+    tags: ["workflow", "gate", "workflow:tianqi-mission", "instance:01M4EXAMPLEINSTANCE"],
+    destinationSession: "orch@kernel",
+  };
+  const opts = { sourceLabel: "vm-openrig-build", evidenceLink: "https://example.invalid/plan.md" };
+
+  it("posts the headline (gate.summary) and evidence link, never the agent packet lines", () => {
+    const m = buildOutboundMessage(gateRow, opts);
+    expect(m.text).toContain("*Approve the plan at https://example.invalid/plan.md*");
+    expect(m.text).toContain("Evidence: https://example.invalid/plan.md");
+    for (const agentLine of ["### Workflow gate", "Workflow instance:", "Prior step:", "This step:", "Objective:", "Continuation:"]) {
+      expect(m.text).not.toContain(agentLine);
+      expect(JSON.stringify(m.blocks)).not.toContain(agentLine);
+    }
+  });
+
+  it("keeps the packet body for a gate row NOT parked on a human (state or gate tag absent)", () => {
+    expect(buildOutboundMessage({ ...gateRow, state: "pending" }, opts).text).toContain("Workflow instance:");
+    expect(buildOutboundMessage({ ...gateRow, tags: ["workflow", "handoff"] }, opts).text).toContain("Workflow instance:");
+  });
+
+  it("falls back to the packet body when the parked gate row carries no plain-language summary", () => {
+    expect(buildOutboundMessage({ ...gateRow, summary: null }, opts).text).toContain("Workflow instance:");
+  });
+});
