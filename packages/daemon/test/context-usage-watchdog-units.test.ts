@@ -103,7 +103,10 @@ describe("context-usage-threshold token/percent units", () => {
     const outcome = await engine().evaluate(repo.getByIdOrThrow(job.jobId));
     expect(outcome.outcome.action).toBe("send");
     expect(deliveries).toHaveLength(1);
-    // Once per generation: second pass is a stable receipt no-op.
+    // Receipt carries the observed sample time alongside value + generation.
+    expect(outcome.outcome).toMatchObject({
+      notes: { sampledAt: FRESH_SAMPLE.sampledAt, observedTokens: 500_000 },
+    });
     const second = await engine().evaluate(repo.getByIdOrThrow(job.jobId));
     expect(second.outcome.action).toBe("skip");
     expect(deliveries).toHaveLength(1);

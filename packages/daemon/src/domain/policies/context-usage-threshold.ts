@@ -199,7 +199,7 @@ export function makeContextUsageThresholdPolicy(
           ...observed.notes,
           ...(unit === "bytes"
             ? { thresholdBytes: threshold }
-            : { threshold, unit }),
+            : { threshold, unit, sampledAt: job.contextUsageSample?.sampledAt ?? null }),
           occupantGeneration: job.occupantGeneration,
         },
       };
