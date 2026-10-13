@@ -288,6 +288,18 @@ function bounded(text: string, max: number, field: string): string {
   return text;
 }
 
+/** PR #1143 review — the one-line workflow/instance context for a rendered human gate,
+ * built from the row's own `workflow:` / `instance:` / `step:` tags. The step rides along
+ * only when tagged. Missing tags render as `?` so the line never names the wrong workflow. */
+export function buildGateContextLine(tags: readonly string[]): string {
+  const tagValue = (prefix: string): string =>
+    tags.find((t) => t.startsWith(`${prefix}:`))?.slice(prefix.length + 1) || "?";
+  const parts = [`Workflow ${tagValue("workflow")}`, `instance ${tagValue("instance")}`];
+  const step = tagValue("step");
+  if (step !== "?") parts.push(`step ${step}`);
+  return inert(parts.join(" · "));
+}
+
 /** Pure, deterministic rendering. Queue metadata stays in the durable request;
  * the human sees one subject, complete body and one sender attribution. */
 export function buildOutboundMessage(q: QitemLike, opts: OutboundMessageOpts): SlackMessagePayload {
@@ -299,6 +311,10 @@ export function buildOutboundMessage(q: QitemLike, opts: OutboundMessageOpts): S
   // that resumes after sign-off) never does. Without a plain-language summary there is
   // nothing to show the person instead, so the packet stays as the fallback.
   const humanGate = isHumanGatePacket(q) && String(q.summary ?? "").trim() !== "";
+  // PR #1143 review — two instances of the same workflow parked at the same gate otherwise
+  // render byte-identical messages. One short line from the row's own tags tells the person
+  // which workflow instance is asking (never the agent packet).
+  const gateContext = humanGate ? buildGateContextLine(q.tags ?? []) : null;
   const gateEvidence = String(q.evidenceRef ?? "").trim();
   // The Evidence path drops out only when the render already carries that same reference —
   // an https ref riding as the evidence link, or a media attachment whose URL IS the ref.
@@ -321,8 +337,9 @@ export function buildOutboundMessage(q: QitemLike, opts: OutboundMessageOpts): S
   if (opts.extraBlocks?.length) {
     throw new HumanMessageShapeError("Extra blocks have no complete accessible fallback. Use mediaRefs for images or author supplemental human detail.");
   }
-  const text = bounded([headline, body, questionParts?.text, attr, evidence ? evidence.text : null, attachmentText, opts.reconcileMarker].filter(Boolean).join("\n"), SLACK_TEXT_CAP, "complete fallback");
+  const text = bounded([headline, gateContext, body, questionParts?.text, attr, evidence ? evidence.text : null, attachmentText, opts.reconcileMarker].filter(Boolean).join("\n"), SLACK_TEXT_CAP, "complete fallback");
   const blocks: unknown[] = [{ type: "section", text: { type: "mrkdwn", text: headline } }];
+  if (gateContext) blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: gateContext }] });
   if (body.trim()) blocks.push({ type: "section", text: { type: "mrkdwn", text: body } });
   if (questionParts) blocks.push(...questionParts.blocks);
   blocks.push(...imageBlocks);

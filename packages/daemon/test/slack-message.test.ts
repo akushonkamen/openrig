@@ -232,4 +232,29 @@ describe("#1013 — a workflow gate parked on a human seat renders the question,
     );
     expect(m.text).not.toContain("Evidence:");
   });
+
+  it("names the workflow and instance so two instances parked at the same gate are distinguishable", () => {
+    const instanceA = buildOutboundMessage(
+      { ...gateRow, tags: [...gateRow.tags, "step:plan_signoff"] },
+      opts,
+    );
+    const instanceB = buildOutboundMessage(
+      { ...gateRow, tags: ["workflow", "gate", "workflow:tianqi-mission", "instance:01M4OTHERINSTANCE", "step:plan_signoff"] },
+      opts,
+    );
+    expect(instanceA.text).toContain("Workflow tianqi-mission · instance 01M4EXAMPLEINSTANCE · step plan_signoff");
+    expect(instanceB.text).toContain("Workflow tianqi-mission · instance 01M4OTHERINSTANCE · step plan_signoff");
+    expect(instanceA.text).not.toBe(instanceB.text);
+    // The context line rides in a block too, not only the fallback text.
+    expect(JSON.stringify(instanceA.blocks)).toContain("instance 01M4EXAMPLEINSTANCE");
+    // Still no agent packet — the context line only, not the instance/step packet lines.
+    expect(instanceA.text).not.toContain("Workflow instance:");
+    expect(instanceA.text).not.toContain("Continuation:");
+  });
+
+  it("omits the step from the context line when the row carries no step tag", () => {
+    const m = buildOutboundMessage(gateRow, opts);
+    expect(m.text).toContain("Workflow tianqi-mission · instance 01M4EXAMPLEINSTANCE");
+    expect(m.text).not.toContain("step ");
+  });
 });
