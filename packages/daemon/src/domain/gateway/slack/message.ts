@@ -28,12 +28,16 @@ export interface QitemLike {
 }
 
 /** #1013 — a workflow gate row parked on a human seat (the projector parks it
- * `state=blocked, blocked_on=<human seat>` and tags it `gate`). Its body is the agent
- * packet — instance/step/Continuation lines for the seat that resumes after sign-off —
- * while the person needs only the headline (`gate.summary`, plain language per C6) and
- * the evidence link. The row itself is untouched; this gates the OUTBOUND render only. */
+ * `state=blocked, blocked_on=<human seat>` and tags it `gate`; every workflow gate also
+ * carries the `workflow` tag — the projector and the runtime both set it). Agents also
+ * put `gate` on rows they write by hand, so requiring both keeps a hand-tagged row's
+ * own body intact. A gate's body is the agent packet — instance/step/Continuation lines
+ * for the seat that resumes after sign-off — while the person needs only the headline
+ * (`gate.summary`, plain language per C6) and the evidence link. The row itself is
+ * untouched; this gates the OUTBOUND render only. */
 export function isHumanGatePacket(q: Pick<QitemLike, "state" | "tags">): boolean {
-  return q.state === "blocked" && (q.tags ?? []).includes("gate");
+  const tags = q.tags ?? [];
+  return q.state === "blocked" && tags.includes("gate") && tags.includes("workflow");
 }
 
 /** M1 A5b — an outbound image attachment. A media-bearing OutboundDecision carries these;
@@ -296,8 +300,14 @@ export function buildOutboundMessage(q: QitemLike, opts: OutboundMessageOpts): S
   // nothing to show the person instead, so the packet stays as the fallback.
   const humanGate = isHumanGatePacket(q) && String(q.summary ?? "").trim() !== "";
   const gateEvidence = String(q.evidenceRef ?? "").trim();
+  // The Evidence path drops out only when the render already carries that same reference —
+  // an https ref riding as the evidence link, or a media attachment whose URL IS the ref.
+  // An image of a DIFFERENT artifact (the common screenshot case) keeps the Evidence line:
+  // without it the human cannot find the referenced document.
+  const gateEvidenceCarried = Boolean(opts.evidenceLink)
+    || (opts.mediaRefs ?? []).some((m) => m.imageUrl === gateEvidence);
   const body = humanGate
-    ? (opts.evidenceLink || opts.mediaRefs?.length || !gateEvidence
+    ? (!gateEvidence || gateEvidenceCarried
       ? ""
       : bounded(`Evidence: ${inert(gateEvidence)}`, SLACK_SECTION_CAP, "body"))
     : bounded(inert(String(q.body || "")), SLACK_SECTION_CAP, "body");

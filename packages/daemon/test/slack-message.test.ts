@@ -204,4 +204,32 @@ describe("#1013 — a workflow gate parked on a human seat renders the question,
   it("falls back to the packet body when the parked gate row carries no plain-language summary", () => {
     expect(buildOutboundMessage({ ...gateRow, summary: null }, opts).text).toContain("Workflow instance:");
   });
+
+  it("keeps the packet body for a hand-tagged [\"gate\"] row that carries no workflow tag", () => {
+    expect(buildOutboundMessage({ ...gateRow, tags: ["gate"] }, opts).text).toContain("Workflow instance:");
+  });
+
+  it("renders a single Evidence: line when the gate's evidence is a local path (the common case)", () => {
+    const m = buildOutboundMessage({ ...gateRow, evidenceRef: "/srv/rig/retained/plan.md" }, { sourceLabel: opts.sourceLabel });
+    expect(m.text).toContain("*Approve the plan at https://example.invalid/plan.md*");
+    expect((m.text.match(/Evidence:/g) ?? []).length).toBe(1);
+    expect(m.text).toContain("Evidence: /srv/rig/retained/plan.md");
+    expect(m.text).not.toContain("Workflow instance:");
+  });
+
+  it("keeps the Evidence line when the attached media is a different artifact than the evidence", () => {
+    const m = buildOutboundMessage(
+      { ...gateRow, evidenceRef: "/srv/rig/retained/plan.md" },
+      { sourceLabel: opts.sourceLabel, mediaRefs: [{ imageUrl: "https://example.invalid/screenshot.png", altText: "screenshot" }] },
+    );
+    expect(m.text).toContain("Evidence: /srv/rig/retained/plan.md");
+  });
+
+  it("suppresses the Evidence path only when the rendered media carries that same reference", () => {
+    const m = buildOutboundMessage(
+      { ...gateRow, evidenceRef: "https://example.invalid/plan.md" },
+      { sourceLabel: opts.sourceLabel, mediaRefs: [{ imageUrl: "https://example.invalid/plan.md", altText: "the plan" }] },
+    );
+    expect(m.text).not.toContain("Evidence:");
+  });
 });
